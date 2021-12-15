@@ -76,6 +76,7 @@ struct thread_options {
 	char *filename;
 	char *filename_format;
 	char *opendir;
+	char *albgenstream;
 	char *ioengine;
 	char *ioengine_so_path;
 	char *mmapfile;
