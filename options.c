@@ -1665,6 +1665,15 @@ static int gtod_cpu_verify(const struct fio_option *o, void *data)
  */
 struct fio_option fio_options[FIO_MAX_OPTS] = {
 	{
+		.name	= "albgenstream",
+                .lname  = "albgentest stream configuration file",
+		.type	= FIO_OPT_STR_STORE,
+		.off1	= offsetof(struct thread_options, albgenstream),
+		.help	= "albgentest config file to generate data",
+                .category = FIO_OPT_C_GENERAL,
+                .def    = NULL,
+        },
+	{
 		.name	= "description",
 		.lname	= "Description of job",
 		.type	= FIO_OPT_STR_STORE,

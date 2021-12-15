@@ -31,6 +31,7 @@
 #include "filelock.h"
 #include "steadystate.h"
 #include "blktrace.h"
+#include "streamGen.h"
 
 #include "oslib/asprintf.h"
 #include "oslib/getopt.h"
@@ -477,6 +478,7 @@ static struct thread_data *get_new_job(bool global, struct thread_data *parent,
 {
 	struct thread_segment *seg;
 	struct thread_data *td;
+	static bool first_call = true;
 
 	if (global)
 		return &def_thread;
@@ -489,6 +491,19 @@ static struct thread_data *get_new_job(bool global, struct thread_data *parent,
 	td = &seg->threads[seg->nr_threads++];
 	thread_number++;
 	*td = *parent;
+
+	// This is not the best way to call a global initialization function,
+	// but it seems like the best minimally-invasive choice since fio does
+	// not have a clean global initialization implementation for
+	// thread-related data.
+	//
+	// No synchronization is required since it is clear from the implementation
+	// of the setup_thread_area() function that the get_new_job() function is
+	// not being called from multiple threads.
+        if (first_call) {
+                globalInitAlbGenStream(REAL_MAX_JOBS);
+                first_call = false;
+        }
 
 	INIT_FLIST_HEAD(&td->opt_list);
 	if (parent != &def_thread)
@@ -949,6 +964,37 @@ static int fixup_options(struct thread_data *td)
 		o->clat_percentiles = 0;
 	if (o->disable_slat)
 		o->slat_percentiles = 0;
+
+	if (td->o.albgenstream != NULL ) {
+          FILE *rfp = fopen(td->o.albgenstream, "r");
+          if (rfp == NULL ) {
+            perror("fopen");
+            return 1;
+          }
+          initAlbGenStream(td->thread_number, rfp, td->o.bs[DDIR_WRITE],
+                           td->o.compress_percentage);
+          fclose(rfp);
+
+          // Calculate the total data I/O size based on the stream length and
+          // block size.  This must be scaled up for read-write tests based on
+          // the read-write ratio since the stream only defines the output for
+          // write-blocks.
+          td->o.size
+            = (unsigned long long) getAlbGenTotalRunLength(td->thread_number)
+            * td->o.bs[DDIR_WRITE];
+          if (td_rw(td)) {
+            assert(td->o.rwmix[DDIR_WRITE] > 0);
+            td->o.size = td->o.size * 100 / td->o.rwmix[DDIR_WRITE];
+          }
+
+          td->io_bytes[DDIR_WRITE] = td->o.bs[DDIR_WRITE] * td->o.iodepth;
+          dprint(FD_IO, "fio: albgenstream File %s\n", td->o.albgenstream);
+          dprint(FD_IO, "fio: albgenstream Size %llu\n", td->o.size);
+          dprint(FD_IO, "fio: albgenstream BlockSize %llu\n", td->o.bs[DDIR_WRITE]);
+          // Force buffers to be refilled from the albgenstream
+          td->o.refill_buffers = 1;
+          td->flags |= TD_F_REFILL_BUFFERS;
+        }
 
 	/*
 	 * Fix these up to be nsec internally
@@ -2985,6 +3031,7 @@ int fio_init_options(void)
 	fio_options_dup_and_init(l_opts);
 
 	atexit(free_shm);
+	atexit(globalFreeAlbGenStream);
 
 	if (fill_def_thread())
 		return 1;

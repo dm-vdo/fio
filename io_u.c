@@ -2,6 +2,7 @@
 #include <string.h>
 #include <assert.h>
 
+#include "streamGen.h"
 #include "fio.h"
 #include "verify.h"
 #include "trim.h"
@@ -1729,6 +1730,13 @@ struct io_u *get_io_u(struct thread_data *td)
 	int do_scramble = 0;
 	long ret = 0;
 
+        if (td->o.albgenstream != NULL) {
+          // If we've exhausted the stream, just return -ENODATA
+          if (isAlbGenStreamEmpty(td->thread_number)) {
+            return ERR_PTR(-ENODATA);
+          }
+        }
+
 	io_u = __get_io_u(td);
 	if (!io_u) {
 		dprint(FD_IO, "__get_io_u failed\n");
@@ -2227,6 +2235,17 @@ void fill_io_buffer(struct thread_data *td, void *buf, unsigned long long min_wr
 
 	if (o->mem_type == MEM_CUDA_MALLOC)
 		return;
+
+	// Fill from albgenstream if specified
+        if (td->o.albgenstream != NULL ) {
+                bool done = isAlbGenStreamEmpty(td->thread_number); 
+                if (done) {
+                  dprint(FD_IO, "end of albgenstream");
+                }
+                assert(!done); // What does this assertion really buy us?
+                getNextAlbGenChunk(td->thread_number, buf, max_bs);
+                return;
+        }
 
 	if (o->compress_percentage || o->dedupe_percentage) {
 		unsigned int perc = td->o.compress_percentage;

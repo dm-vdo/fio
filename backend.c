@@ -694,6 +694,11 @@ static void do_verify(struct thread_data *td, uint64_t verify_bytes)
 				break;
 
 			while ((io_u = get_io_u(td)) != NULL) {
+                                int err = PTR_ERR(io_u);
+                                if (err == -ENODATA) {
+                                  td->done = 1;
+                                  break;
+                                }
 				if (IS_ERR_OR_NULL(io_u)) {
 					io_u = NULL;
 					ret = FIO_Q_BUSY;
@@ -1024,7 +1029,10 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 		io_u = get_io_u(td);
 		if (IS_ERR_OR_NULL(io_u)) {
 			int err = PTR_ERR(io_u);
-
+                        if (err == -ENODATA) {
+                                td->done = 1;
+                                break;
+                        }
 			io_u = NULL;
 			ddir = DDIR_INVAL;
 			if (err == -EBUSY) {
